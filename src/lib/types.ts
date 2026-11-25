@@ -66,6 +66,45 @@ export interface GenerationParams {
   finishMaterial: "italian-marble" | "white-oak" | "brushed-brass" | "concrete-minimalist" | "matte-black";
 }
 
+export interface SceneObject {
+  type:
+    | "bed"
+    | "headboard"
+    | "pillow"
+    | "nightstand"
+    | "lamp"
+    | "window"
+    | "curtain"
+    | "sofa"
+    | "table"
+    | "chair"
+    | "rug"
+    | "artwork"
+    | "plant"
+    | "door"
+    | "tv"
+    | "chandelier"
+    | "other";
+  label: string;
+  x: number; // normalized 0..1
+  y: number; // normalized 0..1
+  w: number; // normalized 0..1
+  h: number; // normalized 0..1
+  primaryColor: string; // hex e.g. #8B6F47
+  secondaryColor: string; // hex e.g. #D4AF37
+  material: "wood" | "fabric" | "marble" | "glass" | "metal" | "foliage" | "plaster";
+  emitsLight?: boolean;
+}
+
+export interface ScenePlan {
+  horizonY: number; // 0..1 where wall meets floor
+  wallColor: string;
+  ceilingColor: string;
+  floorColor: string;
+  accentColor: string;
+  objects: SceneObject[];
+}
+
 export interface RenderResult {
   imageUrl: string;
   sketchUrl: string;

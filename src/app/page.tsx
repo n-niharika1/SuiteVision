@@ -11,7 +11,7 @@ import { ComparisonViewer } from "@/components/ComparisonViewer";
 import { PresetsGallery } from "@/components/PresetsGallery";
 import { ArchitectureDiagram } from "@/components/ArchitectureDiagram";
 import { STYLE_CONFIGS, PRESET_SAMPLES } from "@/lib/presets";
-import { renderSketchLocally } from "@/lib/sketchRenderer";
+import { renderSketchLocally, renderAdvanced3DFromScenePlan } from "@/lib/sketchRenderer";
 import {
   RoomStyleId,
   GenerationParams,
@@ -107,7 +107,15 @@ export default function Home() {
       // use the client-side sketch renderer to transform the actual
       // sketch pixels into a styled render — different sketches will
       // produce genuinely different outputs.
-      if (data.imageUrl === "__USE_LOCAL_RENDERER__" && sketchBase64) {
+      if (data.imageUrl === "__USE_VISION_3D_RENDERER__" && data.scenePlan && sketchBase64) {
+        const localStart = performance.now();
+        finalImageUrl = await renderAdvanced3DFromScenePlan(sketchBase64, data.scenePlan, {
+          style: params.style,
+          lightingMode: params.lightingMode,
+          finishMaterial: params.finishMaterial,
+        });
+        data.processingTimeMs = (data.processingTimeMs || 0) + Math.round(performance.now() - localStart);
+      } else if (data.imageUrl === "__USE_LOCAL_RENDERER__" && sketchBase64) {
         const localStart = performance.now();
         finalImageUrl = await renderSketchLocally(sketchBase64, {
           style: params.style,

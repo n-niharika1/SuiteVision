@@ -31,6 +31,7 @@ export async function POST(request: NextRequest) {
     const finalNegativePrompt = negativePrompt || styleConfig.negativePrompt;
 
     let resultImageUrl = "__USE_LOCAL_RENDERER__";
+    let scenePlan = undefined;
     let modelUsed = `SuiteVision Normal (${engine})`;
     let durationMs = 0;
 
@@ -45,7 +46,12 @@ export async function POST(request: NextRequest) {
           finishMaterial,
           customPrompt: prompt,
         });
-        resultImageUrl = adv.imageDataUrl;
+        if (adv.mode === "direct-image" && adv.imageDataUrl) {
+          resultImageUrl = adv.imageDataUrl;
+        } else if (adv.scenePlan) {
+          resultImageUrl = "__USE_VISION_3D_RENDERER__";
+          scenePlan = adv.scenePlan;
+        }
         modelUsed = "SuiteVision Pro 3D Photoreal Engine (v2.0)";
         durationMs = adv.processingTimeMs;
       } catch (err) {
@@ -69,6 +75,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       imageUrl: resultImageUrl,
+      scenePlan,
       modelUsed,
       renderLevel,
       processingTimeMs: durationMs,
