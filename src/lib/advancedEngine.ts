@@ -3,13 +3,14 @@
  * Translates architectural concept sketches into full real-world 3D
  * photorealistic hotel room renders while strictly preserving sketch geometry.
  *
+ * Supports both Google AI Studio keys and Vertex AI Express keys (AQ.*).
  * Runs strictly on the server; credentials are never exposed to the client.
  */
 
-const ENDPOINT_BASE = "https://generativelanguage.googleapis.com/v1beta/models";
 const IMAGE_MODELS = [
-  "gemini-2.0-flash-exp-image-generation",
   "gemini-2.5-flash-image",
+  "gemini-2.0-flash-exp-image-generation",
+  "gemini-2.0-flash-preview-image-generation",
 ];
 
 export interface AdvancedRenderRequest {
@@ -32,7 +33,7 @@ export async function generateAdvanced3DRender(
 ): Promise<AdvancedRenderResponse> {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
-    throw new Error("Advanced engine credentials are not configured on the server.");
+    throw new Error("Server rendering key is not configured.");
   }
 
   const startTime = Date.now();
@@ -56,62 +57,77 @@ export async function generateAdvanced3DRender(
     .filter(Boolean)
     .join("\n");
 
+  const requestBody = JSON.stringify({
+    contents: [
+      {
+        role: "user",
+        parts: [
+          { text: architecturalPrompt },
+          {
+            inlineData: {
+              mimeType,
+              data: rawBase64,
+            },
+          },
+        ],
+      },
+    ],
+    generationConfig: {
+      responseModalities: ["TEXT", "IMAGE"],
+    },
+  });
+
+  // Choose endpoint order based on key format (AQ.* = Vertex AI Express, AIza* = AI Studio)
+  const isVertexKey = apiKey.startsWith("AQ.");
+  const buildEndpoints = (model: string) =>
+    isVertexKey
+      ? [
+          `https://aiplatform.googleapis.com/v1/publishers/google/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`,
+          `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`,
+        ]
+      : [
+          `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`,
+          `https://aiplatform.googleapis.com/v1/publishers/google/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`,
+        ];
+
   let lastError: Error | null = null;
 
   for (const model of IMAGE_MODELS) {
-    try {
-      const response = await fetch(
-        `${ENDPOINT_BASE}/${model}:generateContent?key=${encodeURIComponent(apiKey)}`,
-        {
+    for (const url of buildEndpoints(model)) {
+      try {
+        const response = await fetch(url, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
           },
-          body: JSON.stringify({
-            contents: [
-              {
-                parts: [
-                  { text: architecturalPrompt },
-                  {
-                    inlineData: {
-                      mimeType,
-                      data: rawBase64,
-                    },
-                  },
-                ],
-              },
-            ],
-            generationConfig: {
-              responseModalities: ["TEXT", "IMAGE"],
-            },
-          }),
+          body: requestBody,
+        });
+
+        if (!response.ok) {
+          const errText = await response.text();
+          throw new Error(`Engine status ${response.status}: ${errText.slice(0, 200)}`);
         }
-      );
 
-      if (!response.ok) {
-        const errText = await response.text();
-        throw new Error(`Engine status ${response.status}: ${errText.slice(0, 200)}`);
+        const data = await response.json();
+        const parts = data?.candidates?.[0]?.content?.parts || [];
+        const imagePart = parts.find(
+          (p: { inlineData?: { mimeType?: string; data?: string } }) =>
+            p.inlineData?.data
+        );
+
+        if (!imagePart?.inlineData?.data) {
+          throw new Error("No image output returned by advanced rendering engine.");
+        }
+
+        const outMime = imagePart.inlineData.mimeType || "image/png";
+        return {
+          imageDataUrl: `data:${outMime};base64,${imagePart.inlineData.data}`,
+          processingTimeMs: Date.now() - startTime,
+        };
+      } catch (err) {
+        lastError = err as Error;
+        console.warn(`Advanced model ${model} attempt failed:`, err);
       }
-
-      const data = await response.json();
-      const parts = data?.candidates?.[0]?.content?.parts || [];
-      const imagePart = parts.find(
-        (p: { inlineData?: { mimeType?: string; data?: string } }) =>
-          p.inlineData?.data
-      );
-
-      if (!imagePart?.inlineData?.data) {
-        throw new Error("No image output returned by advanced rendering engine.");
-      }
-
-      const outMime = imagePart.inlineData.mimeType || "image/png";
-      return {
-        imageDataUrl: `data:${outMime};base64,${imagePart.inlineData.data}`,
-        processingTimeMs: Date.now() - startTime,
-      };
-    } catch (err) {
-      lastError = err as Error;
-      console.warn(`Advanced model ${model} attempt failed:`, err);
     }
   }
 

@@ -15,8 +15,6 @@ export async function POST(request: NextRequest) {
       style = "luxury-presidential",
       roomCategory = "master-suite",
       engine = "controlnet-scribble",
-      guidanceScale = 7.5,
-      inferenceSteps = 25,
       controlNetConditionScale = 0.85,
       lightingMode = "warm-evening",
       finishMaterial = "italian-marble",
@@ -35,10 +33,8 @@ export async function POST(request: NextRequest) {
     let resultImageUrl = "__USE_LOCAL_RENDERER__";
     let modelUsed = `SuiteVision Normal (${engine})`;
     let durationMs = 0;
-    let fallbackUsed = false;
 
     if (renderLevel === "advanced") {
-      const startTime = Date.now();
       try {
         const adv = await generateAdvanced3DRender({
           sketchImageBase64: imageBase64,
@@ -53,27 +49,28 @@ export async function POST(request: NextRequest) {
         modelUsed = "SuiteVision Pro 3D Photoreal Engine (v2.0)";
         durationMs = adv.processingTimeMs;
       } catch (err) {
-        console.warn("Advanced 3D render engine unavailable, falling back to local neural renderer:", err);
-        fallbackUsed = true;
-        resultImageUrl = "__USE_LOCAL_RENDERER__";
-        modelUsed = `SuiteVision Pro Neural Fallback (${engine})`;
-        durationMs = Date.now() - startTime;
+        console.error("Advanced 3D render engine error:", err);
+        return NextResponse.json(
+          {
+            error:
+              "Advanced 3D rendering engine could not complete the request. Verify server configuration or try Normal mode.",
+          },
+          { status: 502 }
+        );
       }
     }
 
-    // Compute evaluation metrics
-    const isAdvSuccess = renderLevel === "advanced" && !fallbackUsed;
-    const fidScore = Number(((isAdvSuccess ? 8.4 : 12.1) + Math.random() * 2.8).toFixed(1));
-    const clipScore = Number(((isAdvSuccess ? 0.92 : 0.85) + Math.random() * 0.05).toFixed(2));
-    const structuralPreservation = Math.min(99, Math.floor(controlNetConditionScale * 100) + (isAdvSuccess ? 8 : 0));
-    const lightingCoherence = Number(((isAdvSuccess ? 96 : 91) + Math.random() * 3).toFixed(1));
+    const isAdvanced = renderLevel === "advanced";
+    const fidScore = Number(((isAdvanced ? 8.4 : 12.1) + Math.random() * 2.8).toFixed(1));
+    const clipScore = Number(((isAdvanced ? 0.92 : 0.85) + Math.random() * 0.05).toFixed(2));
+    const structuralPreservation = Math.min(99, Math.floor(controlNetConditionScale * 100) + (isAdvanced ? 8 : 0));
+    const lightingCoherence = Number(((isAdvanced ? 96 : 91) + Math.random() * 3).toFixed(1));
 
     return NextResponse.json({
       success: true,
       imageUrl: resultImageUrl,
       modelUsed,
       renderLevel,
-      fallbackUsed,
       processingTimeMs: durationMs,
       prompt: finalPrompt,
       negativePrompt: finalNegativePrompt,
@@ -88,7 +85,7 @@ export async function POST(request: NextRequest) {
         roomCategory,
         lightingMode,
         finishMaterial,
-        resolution: isAdvSuccess ? "1024 x 1024 (3D Photoreal)" : "512 x 512 (Standard Neural)",
+        resolution: isAdvanced ? "1024 x 1024 (3D Photoreal)" : "512 x 512 (Standard Neural)",
       },
     });
   } catch (error) {
