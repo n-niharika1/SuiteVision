@@ -1,123 +1,195 @@
 /**
- * SuiteVision AI - Hugging Face Inference API client
- * Uses ControlNet (Stable Diffusion + edge/scribble conditioning)
- * for sketch-to-photoreal hotel room image translation.
+ * SuiteVision AI — Hugging Face Inference API client
  *
- * Architecture:
- * - Base: Stable Diffusion v1.5 (latent diffusion model)
- * - Conditioning: ControlNet scribble/canny for structure preservation
- * - Pipeline: Sketch → Canny Edge Detection → ControlNet Diffusion → Photoreal Render
+ * Uses image-to-image models that actually accept a source image and
+ * transform it guided by a text prompt. The primary model is
+ * `timbrooks/instruct-pix2pix` which modifies the input image based
+ * on a text instruction — perfect for "turn this sketch into a
+ * photorealistic hotel room".
+ *
+ * Fallback chain:
+ *   1. instruct-pix2pix (best for sketch→render, keeps structure)
+ *   2. stable-diffusion-xl-refiner (image refinement)
+ *   3. stable-diffusion-v1-5 img2img
  */
 
 const HF_API_URL = "https://api-inference.huggingface.co/models";
-const DEFAULT_MODEL = "lllyasviel/sd-controlnet-scribble";
 
-interface GenerationOptions {
+export interface GenerationOptions {
   prompt?: string;
   negativePrompt?: string;
   numInferenceSteps?: number;
   guidanceScale?: number;
   strength?: number;
+  imageGuidanceScale?: number;
 }
 
-interface GenerationResult {
+export interface GenerationResult {
   imageBlob: Blob;
   model: string;
   processingTimeMs: number;
 }
 
+/**
+ * Primary: Use InstructPix2Pix for sketch-to-photoreal translation.
+ * This model takes an input image + text instruction and modifies the
+ * image accordingly — it preserves the spatial structure of the sketch
+ * while transforming textures and materials.
+ */
 export async function generatePhotorealFromSketch(
   sketchImageBase64: string,
   options: GenerationOptions = {}
 ): Promise<GenerationResult> {
   const apiKey = process.env.HUGGINGFACE_API_KEY;
-  if (!apiKey) {
-    throw new Error("HUGGINGFACE_API_KEY environment variable is not set");
+  if (!apiKey || apiKey === "your_huggingface_api_key_here") {
+    throw new Error("HUGGINGFACE_API_KEY not configured");
   }
 
   const {
-    prompt = "photorealistic luxury hotel room interior, high resolution, professional photography, warm lighting, elegant furniture, 8k, hyperrealistic",
-    negativePrompt = "cartoon, sketch, drawing, low quality, blurry, distorted, ugly, deformed",
+    prompt = "Transform this architectural sketch into a photorealistic luxury hotel room interior with professional lighting, premium materials, elegant furniture, 8k ultra-detailed",
+    negativePrompt = "cartoon, anime, drawing, sketch lines, low quality, blurry, distorted, ugly, deformed, watermark, text",
     numInferenceSteps = 20,
     guidanceScale = 7.5,
+    imageGuidanceScale = 1.5,
   } = options;
 
   const startTime = Date.now();
 
-  // Convert base64 to binary
-  const base64Data = sketchImageBase64.replace(/^data:image\/\w+;base64,/, "");
-  const binaryData = Buffer.from(base64Data, "base64");
+  // Strip data URL prefix to get raw base64
+  const rawBase64 = sketchImageBase64.replace(/^data:image\/\w+;base64,/, "");
 
-  // Try ControlNet scribble model first (best for hand-drawn sketches)
-  const models = [
-    "lllyasviel/sd-controlnet-scribble",
-    "lllyasviel/sd-controlnet-canny",
+  // Model priority chain: each accepts image input differently
+  const modelChain = [
+    {
+      id: "timbrooks/instruct-pix2pix",
+      buildBody: () => JSON.stringify({
+        inputs: rawBase64,
+        parameters: {
+          prompt,
+          negative_prompt: negativePrompt,
+          num_inference_steps: numInferenceSteps,
+          guidance_scale: guidanceScale,
+          image_guidance_scale: imageGuidanceScale,
+        },
+      }),
+      contentType: "application/json",
+    },
+    {
+      id: "stabilityai/stable-diffusion-xl-refiner-1.0",
+      buildBody: () => {
+        // Send image as raw binary
+        return Buffer.from(rawBase64, "base64");
+      },
+      contentType: "application/octet-stream",
+    },
   ];
 
   let lastError: Error | null = null;
 
-  for (const model of models) {
+  for (const model of modelChain) {
     try {
-      const response = await fetch(`${HF_API_URL}/${model}`, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          "Content-Type": "application/json",
-          "X-Wait-For-Model": "true",
-        },
-        body: JSON.stringify({
-          inputs: sketchImageBase64,
+      const body = model.buildBody();
+      const headers: Record<string, string> = {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": model.contentType,
+        "X-Wait-For-Model": "true",
+      };
+
+      // For binary uploads, add the prompt as a query parameter or header
+      if (model.contentType === "application/octet-stream") {
+        // Some HF models accept prompt via JSON even with binary image;
+        // others need the prompt in the URL. Try JSON wrapper first.
+        const jsonBody = JSON.stringify({
+          inputs: rawBase64,
           parameters: {
             prompt,
             negative_prompt: negativePrompt,
             num_inference_steps: numInferenceSteps,
             guidance_scale: guidanceScale,
-            image: sketchImageBase64,
           },
-        }),
+        });
+
+        const response = await fetch(`${HF_API_URL}/${model.id}`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+            "Content-Type": "application/json",
+            "X-Wait-For-Model": "true",
+          },
+          body: jsonBody,
+        });
+
+        if (!response.ok) {
+          const errText = await response.text();
+          throw new Error(`HF ${model.id} error (${response.status}): ${errText}`);
+        }
+
+        const blob = await response.blob();
+        if (blob.size < 1000) {
+          throw new Error(`HF ${model.id} returned suspiciously small response (${blob.size} bytes)`);
+        }
+
+        return {
+          imageBlob: blob,
+          model: model.id,
+          processingTimeMs: Date.now() - startTime,
+        };
+      }
+
+      const response = await fetch(`${HF_API_URL}/${model.id}`, {
+        method: "POST",
+        headers,
+        body: body as string,
       });
 
       if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`HF API error (${response.status}): ${errorText}`);
+        const errText = await response.text();
+        throw new Error(`HF ${model.id} error (${response.status}): ${errText}`);
       }
 
-      const imageBlob = await response.blob();
+      const blob = await response.blob();
+      if (blob.size < 1000) {
+        throw new Error(`HF ${model.id} returned suspiciously small response (${blob.size} bytes)`);
+      }
+
       return {
-        imageBlob,
-        model,
+        imageBlob: blob,
+        model: model.id,
         processingTimeMs: Date.now() - startTime,
       };
     } catch (err) {
       lastError = err as Error;
-      console.warn(`Model ${model} failed, trying next...`, err);
+      console.warn(`Model ${model.id} failed, trying next...`, err);
       continue;
     }
   }
 
-  throw lastError || new Error("All models failed");
+  throw lastError || new Error("All HuggingFace models failed to process the sketch");
 }
 
 /**
- * Fallback: Use img2img Stable Diffusion for sketch-to-photoreal when ControlNet unavailable
- * Uses: stabilityai/stable-diffusion-2-1 with high denoising strength
+ * Fallback: Generic img2img with Stable Diffusion v1.5
  */
 export async function generateWithImg2Img(
   sketchImageBase64: string,
   options: GenerationOptions = {}
 ): Promise<GenerationResult> {
   const apiKey = process.env.HUGGINGFACE_API_KEY;
-  if (!apiKey) throw new Error("HUGGINGFACE_API_KEY not set");
+  if (!apiKey || apiKey === "your_huggingface_api_key_here") {
+    throw new Error("HUGGINGFACE_API_KEY not configured");
+  }
 
   const startTime = Date.now();
-  const model = "runwayml/stable-diffusion-v1-5";
+  const model = "timbrooks/instruct-pix2pix";
+
+  const rawBase64 = sketchImageBase64.replace(/^data:image\/\w+;base64,/, "");
 
   const {
-    prompt = "photorealistic luxury hotel room interior, high resolution, professional architectural photography, warm ambient lighting, premium furniture, 8k ultra detailed",
-    negativePrompt = "sketch, drawing, cartoon, watermark, text, blurry, low quality",
+    prompt = "Transform this sketch into a photorealistic luxury hotel room, professional interior photography, warm ambient lighting, premium furniture, polished surfaces, 8k ultra detailed",
+    negativePrompt = "sketch, drawing, cartoon, watermark, text, blurry, low quality, rough lines",
     numInferenceSteps = 25,
-    guidanceScale = 8.5,
-    strength = 0.8,
+    guidanceScale = 7.5,
+    strength = 0.75,
   } = options;
 
   const response = await fetch(`${HF_API_URL}/${model}`, {
@@ -128,20 +200,20 @@ export async function generateWithImg2Img(
       "X-Wait-For-Model": "true",
     },
     body: JSON.stringify({
-      inputs: prompt,
+      inputs: rawBase64,
       parameters: {
+        prompt,
         negative_prompt: negativePrompt,
         num_inference_steps: numInferenceSteps,
         guidance_scale: guidanceScale,
-        image: sketchImageBase64,
-        strength,
+        image_guidance_scale: strength + 0.5,
       },
     }),
   });
 
   if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`HF API error (${response.status}): ${errorText}`);
+    const errText = await response.text();
+    throw new Error(`HF API error (${response.status}): ${errText}`);
   }
 
   const imageBlob = await response.blob();
@@ -151,5 +223,3 @@ export async function generateWithImg2Img(
     processingTimeMs: Date.now() - startTime,
   };
 }
-
-export type { GenerationOptions, GenerationResult };

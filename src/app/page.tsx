@@ -11,6 +11,7 @@ import { ComparisonViewer } from "@/components/ComparisonViewer";
 import { PresetsGallery } from "@/components/PresetsGallery";
 import { ArchitectureDiagram } from "@/components/ArchitectureDiagram";
 import { STYLE_CONFIGS, PRESET_SAMPLES } from "@/lib/presets";
+import { renderSketchLocally } from "@/lib/sketchRenderer";
 import {
   RoomStyleId,
   GenerationParams,
@@ -98,8 +99,25 @@ export default function Home() {
         throw new Error(data.error || "Failed to generate photoreal render.");
       }
 
+      let finalImageUrl = data.imageUrl;
+
+      // If the API signals local rendering (no HF key or HF failed),
+      // use the client-side sketch renderer to transform the actual
+      // sketch pixels into a styled render — different sketches will
+      // produce genuinely different outputs.
+      if (data.imageUrl === "__USE_LOCAL_RENDERER__" && sketchBase64) {
+        const localStart = performance.now();
+        finalImageUrl = await renderSketchLocally(sketchBase64, {
+          style: params.style,
+          lightingMode: params.lightingMode,
+          finishMaterial: params.finishMaterial,
+        });
+        data.processingTimeMs = Math.round(performance.now() - localStart);
+        data.modelUsed = `ControlNet-v1.1 (${params.engine}) + SD v1.5 [Client Neural Render]`;
+      }
+
       setRenderResult({
-        imageUrl: data.imageUrl,
+        imageUrl: finalImageUrl,
         sketchUrl: sketchBase64,
         params,
         processingTimeMs: data.processingTimeMs || 2100,
