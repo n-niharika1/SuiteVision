@@ -41,6 +41,7 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null);
 
   const [params, setParams] = useState<GenerationParams>({
+    renderLevel: "advanced",
     style: "luxury-presidential",
     roomCategory: "master-suite",
     engine: "controlnet-scribble",
@@ -80,6 +81,7 @@ export default function Home() {
         },
         body: JSON.stringify({
           imageBase64: sketchBase64,
+          renderLevel: params.renderLevel,
           style: params.style,
           roomCategory: params.roomCategory,
           engine: params.engine,
@@ -113,7 +115,10 @@ export default function Home() {
           finishMaterial: params.finishMaterial,
         });
         data.processingTimeMs = Math.round(performance.now() - localStart);
-        data.modelUsed = `ControlNet-v1.1 (${params.engine}) + SD v1.5 [Client Neural Render]`;
+        data.modelUsed =
+          params.renderLevel === "normal"
+            ? `SuiteVision Normal (${params.engine})`
+            : `SuiteVision Pro Neural Fallback (${params.engine})`;
       }
 
       setRenderResult({

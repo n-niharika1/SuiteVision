@@ -1,8 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { GenerationParams, RoomCategory, AIModelEngine } from "@/lib/types";
-import { Sliders, Cpu, Sun, Layers, ChevronDown, ChevronUp, Terminal } from "lucide-react";
+import { GenerationParams, RoomCategory, AIModelEngine, RenderLevel } from "@/lib/types";
+import { Sliders, Cpu, Sun, Layers, ChevronDown, ChevronUp, Terminal, Zap, Sparkles } from "lucide-react";
 
 interface ParameterControlsProps {
   params: GenerationParams;
@@ -54,8 +54,62 @@ export function ParameterControls({ params, onChange, disabled }: ParameterContr
           </h3>
         </div>
         <span className="text-[10px] font-mono text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
-          GPU Latent Pipeline
+          {params.renderLevel === "advanced" ? "3D Photoreal Engine" : "Standard Pipeline"}
         </span>
+      </div>
+
+      {/* Render Level Selector: Normal vs Advanced */}
+      <div className="space-y-1.5">
+        <label className="text-xs font-semibold text-slate-300 uppercase tracking-wider block">
+          Rendering Quality Level
+        </label>
+        <div className="grid grid-cols-2 gap-2.5">
+          <button
+            type="button"
+            disabled={disabled}
+            onClick={() => onChange({ renderLevel: "normal" as RenderLevel })}
+            className={`p-3 rounded-xl border text-left transition-all ${
+              params.renderLevel === "normal"
+                ? "border-amber-500 bg-amber-500/15 ring-1 ring-amber-500/40"
+                : "border-slate-800 bg-slate-900/60 hover:border-slate-700"
+            }`}
+          >
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-xs font-bold text-white flex items-center gap-1.5">
+                <Zap className="w-3.5 h-3.5 text-blue-400" />
+                Normal
+              </span>
+              <span className="text-[10px] font-mono text-slate-400">Instant</span>
+            </div>
+            <p className="text-[11px] text-slate-400 leading-snug">
+              Fast client-side neural stylization preserving sketch contours.
+            </p>
+          </button>
+
+          <button
+            type="button"
+            disabled={disabled}
+            onClick={() => onChange({ renderLevel: "advanced" as RenderLevel })}
+            className={`p-3 rounded-xl border text-left transition-all ${
+              params.renderLevel === "advanced"
+                ? "border-amber-500 bg-amber-500/15 ring-1 ring-amber-500/40 shadow-lg shadow-amber-500/10"
+                : "border-slate-800 bg-slate-900/60 hover:border-slate-700"
+            }`}
+          >
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-xs font-bold text-amber-300 flex items-center gap-1.5">
+                <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                Advanced
+              </span>
+              <span className="text-[10px] font-mono text-amber-400 bg-amber-500/10 px-1.5 py-0.5 rounded">
+                3D Realism
+              </span>
+            </div>
+            <p className="text-[11px] text-slate-400 leading-snug">
+              Full real-world 3D objects, natural colors &amp; volumetric lighting.
+            </p>
+          </button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

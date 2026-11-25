@@ -14,6 +14,8 @@ export type RoomCategory =
   | "bathroom-spa"
   | "lobby-terrace";
 
+export type RenderLevel = "normal" | "advanced";
+
 export type AIModelEngine =
   | "controlnet-scribble"
   | "controlnet-canny"
@@ -50,6 +52,7 @@ export interface PresetSample {
 }
 
 export interface GenerationParams {
+  renderLevel: RenderLevel;
   style: RoomStyleId;
   roomCategory: RoomCategory;
   engine: AIModelEngine;
