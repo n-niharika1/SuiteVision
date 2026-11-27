@@ -21,6 +21,7 @@
  */
 
 import { ScenePlan, SceneObject } from "./types";
+import { renderWithThreeJS } from "./threeRenderer";
 
 export interface LocalRenderOptions {
   style: string;
@@ -350,6 +351,16 @@ export async function renderAdvanced3DFromScenePlan(
   plan: ScenePlan,
   options: LocalRenderOptions
 ): Promise<string> {
+  // Primary: true 3D WebGL perspective render with PBR materials & soft shadows
+  try {
+    const threeUrl = await renderWithThreeJS(plan, options);
+    if (threeUrl) {
+      return threeUrl;
+    }
+  } catch {
+    // Fall back to Canvas 2D renderer if WebGL context is unavailable
+  }
+
   const img = await loadImage(sketchBase64);
   const W = 1024;
   const H = 768;
