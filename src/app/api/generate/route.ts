@@ -31,6 +31,7 @@ export async function POST(request: NextRequest) {
     const finalNegativePrompt = negativePrompt || styleConfig.negativePrompt;
 
     let resultImageUrl = "__USE_LOCAL_RENDERER__";
+    let photorealPrompt: string | undefined = undefined;
     let scenePlan = undefined;
     let modelUsed = `SuiteVision Normal (${engine})`;
     let durationMs = 0;
@@ -48,6 +49,9 @@ export async function POST(request: NextRequest) {
         });
         if (adv.mode === "direct-image" && adv.imageDataUrl) {
           resultImageUrl = adv.imageDataUrl;
+        } else if (adv.mode === "client-diffusion" && adv.photorealPrompt) {
+          resultImageUrl = "__USE_CLIENT_DIFFUSION__";
+          photorealPrompt = adv.photorealPrompt;
         } else if (adv.scenePlan) {
           resultImageUrl = "__USE_VISION_3D_RENDERER__";
           scenePlan = adv.scenePlan;
@@ -75,6 +79,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       imageUrl: resultImageUrl,
+      photorealPrompt,
       scenePlan,
       modelUsed,
       renderLevel,

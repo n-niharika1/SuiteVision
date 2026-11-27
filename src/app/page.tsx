@@ -107,7 +107,43 @@ export default function Home() {
       // use the client-side sketch renderer to transform the actual
       // sketch pixels into a styled render — different sketches will
       // produce genuinely different outputs.
-      if (data.imageUrl === "__USE_VISION_3D_RENDERER__" && data.scenePlan && sketchBase64) {
+      if (data.imageUrl === "__USE_CLIENT_DIFFUSION__" && data.photorealPrompt) {
+        const localStart = performance.now();
+        const encoded = encodeURIComponent(data.photorealPrompt.slice(0, 850));
+        const seed = Math.floor(Math.random() * 1000000);
+        let fetchedUrl: string | null = null;
+
+        for (const m of ["turbo", "flux"]) {
+          try {
+            const url = `https://image.pollinations.ai/prompt/${encoded}?width=1024&height=768&model=${m}&nologo=true&seed=${seed}`;
+            const imgRes = await fetch(url);
+            if (imgRes.ok) {
+              const blob = await imgRes.blob();
+              if (blob.size > 5000) {
+                fetchedUrl = await new Promise<string>((resolve) => {
+                  const reader = new FileReader();
+                  reader.onloadend = () => resolve(reader.result as string);
+                  reader.readAsDataURL(blob);
+                });
+                break;
+              }
+            }
+          } catch {
+            // Try next model
+          }
+        }
+
+        if (fetchedUrl) {
+          finalImageUrl = fetchedUrl;
+          data.processingTimeMs = (data.processingTimeMs || 0) + Math.round(performance.now() - localStart);
+        } else if (sketchBase64) {
+          finalImageUrl = await renderSketchLocally(sketchBase64, {
+            style: params.style,
+            lightingMode: params.lightingMode,
+            finishMaterial: params.finishMaterial,
+          });
+        }
+      } else if (data.imageUrl === "__USE_VISION_3D_RENDERER__" && data.scenePlan && sketchBase64) {
         const localStart = performance.now();
         finalImageUrl = await renderAdvanced3DFromScenePlan(sketchBase64, data.scenePlan, {
           style: params.style,
