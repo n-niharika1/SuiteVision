@@ -14,10 +14,10 @@ import { ScenePlan } from "./types";
 const BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models";
 
 const IMAGE_MODELS = [
-  "gemini-3.1-flash-image",
-  "gemini-3.1-flash-lite-image",
-  "gemini-2.5-flash-image",
   "gemini-3-pro-image",
+  "gemini-3.1-flash-image",
+  "gemini-2.5-flash-image",
+  "gemini-3.1-flash-lite-image",
 ];
 
 const VISION_MODELS = [
@@ -58,11 +58,16 @@ export async function generateAdvanced3DRender(
 
   // ── Tier 1: Try Direct Image Generation ──────────────────────────────────
   const directPrompt = [
-    `Transform this exact architectural concept sketch into a full real-world 3D photorealistic photograph of a luxury ${req.roomCategory.replace(/-/g, " ")}.`,
-    `STRICT STRUCTURAL ADHERENCE: Follow the exact layout, perspective lines, camera angle, proportions, and object placements drawn in the input sketch. Keep every wall, bed, window, lamp, table, and furniture item in the exact same position.`,
-    `REAL-WORLD 3D PHOTOREALISM: Render tangible real-world 3D objects with natural colors, authentic textures, soft shadows, and physically accurate ${req.lightingMode.replace(/-/g, " ")} lighting.`,
-    `Style: ${req.styleName}. Material: ${req.finishMaterial.replace(/-/g, " ")}.`,
-    req.customPrompt ? `Notes: ${req.customPrompt}` : "",
+    `Convert this architectural room sketch into a crisp, ultra-photorealistic 3D interior photograph of a luxury ${req.roomCategory.replace(/-/g, " ")}, indistinguishable from a real architectural magazine photograph.`,
+    `STRICT STRUCTURAL ADHERENCE: Preserve the exact 3D perspective, camera angle, wall boundaries, ceiling molding, floor plane, and exact placement/proportions of every object drawn in the sketch (bed, headboard, nightstands, lamps, windows, curtains, plants, wardrobes, artwork, rugs). Do NOT move, remove, or invent major structural elements.`,
+    `REAL-WORLD 3D MATERIALS & LIGHTING:`,
+    `- Natural wood grain on furniture/wardrobes, tufted fabric/velvet upholstery, crisp layered bedding and pillows, textured plaster/marble walls, polished stone or hardwood flooring with subtle reflections.`,
+    `- Warm glowing table lamps casting realistic soft radial light onto adjacent walls, soft contact shadows under furniture, natural ambient occlusion in corners, and crisp 3D depth.`,
+    `- Aesthetic: ${req.styleName} (${req.stylePrompt})`,
+    `- Lighting: ${req.lightingMode.replace(/-/g, " ")}`,
+    `- Signature Material: ${req.finishMaterial.replace(/-/g, " ")}`,
+    req.customPrompt ? `- Designer Notes: ${req.customPrompt}` : "",
+    `Output ONLY the final photorealistic 3D interior photograph with no sketch lines, no borders, and no text.`,
   ]
     .filter(Boolean)
     .join("\n");
